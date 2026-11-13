@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1e1f22">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icones/icone-192.png">
+<title>Lecteur de thèse</title>
+<style>
+  :root { --fond:#2b2d31; --barre:#1e1f22; --txt:#e6e6e6; --gris:#9a9ca3; --accent:#5b8def; --carte:#232428; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin:0; height:100%; background:var(--fond); color:var(--txt);
+               font: 16px/1.4 system-ui, "Segoe UI", Roboto, sans-serif; overscroll-behavior: none; }
+  body { display:flex; flex-direction:column; height:100dvh; }
+  button, select { font: inherit; color:var(--txt); background:#383a40; border:1px solid #4a4d55; border-radius:8px;
+                   padding:8px 12px; min-height:42px; }
+  button:active { background:#4a4d55; }
+  button.prim { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  button.rouge { background:#8a3b3b; border-color:#a44; }
+  #barre { display:flex; align-items:center; gap:6px; padding:6px 8px; padding-top:calc(6px + env(safe-area-inset-top));
+           background:var(--barre); flex-wrap:nowrap; overflow-x:auto; }
+  #barre button { padding:6px 10px; min-width:42px; }
+  #page { font-variant-numeric: tabular-nums; min-width:76px; text-align:center; white-space:nowrap; }
+  #titre { flex:1; min-width:60px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--gris); font-size:14px; }
+  #nbbadge { background:var(--accent); color:#fff; border-radius:10px; padding:0 6px; font-size:13px; margin-left:3px; }
+  #vue { flex:1; overflow:auto; display:flex; align-items:flex-start; padding:8px; touch-action: pan-x pan-y; }
+  #feuille { position:relative; margin:0 auto; flex:none; background:#fff; box-shadow:0 2px 12px #0008; }
+  #canv { display:block; }
+  /* couche de texte de pdf.js 3.11 : texte transparent, sélectionnable par appui long */
+  .textLayer { position:absolute; text-align:initial; inset:0; overflow:hidden; opacity:.25; line-height:1;
+               text-size-adjust:none; -webkit-text-size-adjust:none; forced-color-adjust:none; transform-origin:0 0; z-index:2; }
+  .textLayer :is(span,br) { color:transparent; position:absolute; white-space:pre; cursor:text; transform-origin:0 0; }
+  .textLayer span.markedContent { top:0; height:0; }
+  .textLayer ::selection { background:#00f; }
+  .textLayer br::selection { background:transparent; }
+  .textLayer .endOfContent { display:block; position:absolute; inset:100% 0 0; z-index:-1; user-select:none; }
+  #surl { position:absolute; inset:0; pointer-events:none; z-index:1; }
+  .sl { position:absolute; border-radius:2px; mix-blend-mode:multiply; background:rgba(255,200,0,.35); }
+  .sl.cat-Remarque { background:rgba(91,141,239,.30); } .sl.cat-Question { background:rgba(227,179,65,.40); }
+  .sl.cat-Critique { background:rgba(229,83,75,.30); } .sl.cat-Point { background:rgba(87,171,90,.32); }
+  .sl.cat-Coquille { background:rgba(150,150,150,.35); }
+  .sl.attente { background:rgba(255,200,0,.30); outline:1px dashed #c80; }
+  .sl.flash { animation: flash 1.6s ease-out 1; }
+  @keyframes flash { 0%,40% { box-shadow:0 0 0 3px #f60; } 100% { box-shadow:0 0 0 0 transparent; } }
+  #bcit { position:fixed; z-index:20; display:none; left:50%; transform:translateX(-50%); bottom:calc(16px + env(safe-area-inset-bottom));
+          background:var(--accent); color:#fff; border:0; border-radius:24px; padding:12px 20px; font-weight:600;
+          box-shadow:0 4px 16px #000a; }
+  /* panneau des commentaires : feuille qui monte du bas */
+  #panneau { position:fixed; left:0; right:0; bottom:0; height:72dvh; background:var(--fond); border-top:2px solid var(--accent);
+             border-radius:14px 14px 0 0; display:flex; flex-direction:column; gap:8px; padding:10px 10px calc(10px + env(safe-area-inset-bottom));
+             transform:translateY(105%); transition:transform .2s ease; z-index:10; box-shadow:0 -6px 24px #000a; }
+  #panneau.ouvert { transform:none; }
+  #panneau h2 { font-size:17px; margin:0; display:flex; align-items:center; gap:8px; }
+  #panneau h2 span { flex:1; }
+  #saisie { display:flex; flex-direction:column; gap:6px; background:var(--carte); border-radius:10px; padding:8px; }
+  #ctx { color:var(--gris); font-size:13px; }
+  #citsaisie { font-style:italic; color:#c9cbd1; font-size:13px; display:none; }
+  #texte { width:100%; min-height:84px; resize:vertical; background:#1e1f22; color:var(--txt); border:1px solid #4a4d55;
+           border-radius:8px; padding:8px; font: 16px/1.4 system-ui, Roboto, sans-serif; }
+  #texte:focus { outline:2px solid var(--accent); }
+  .ligne { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  #micro.actif { background:#c0392b; border-color:#e74c3c; animation: pulse 1.2s infinite; }
+  #memo.actif { background:#c0392b; border-color:#e74c3c; }
+  @keyframes pulse { 50% { opacity:.6; } }
+  #etat { font-size:13px; color:var(--gris); min-height:18px; }
+  #etat.ko { color:#f8a; font-weight:600; }
+  #lnotes { overflow:auto; flex:1; display:flex; flex-direction:column; gap:6px; }
+  .note { background:var(--carte); border-radius:10px; padding:8px 10px; border-left:5px solid var(--gris); }
+  .note.ici { box-shadow: 0 0 0 1px var(--accent) inset; }
+  .note .tete { font-size:13px; color:var(--gris); display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .note .tete b { color:var(--txt); }
+  .note .act { margin-left:auto; display:flex; gap:4px; }
+  .note .act button { padding:4px 9px; min-height:34px; font-size:14px; }
+  .note .corps { white-space:pre-wrap; margin-top:4px; }
+  .note .cit { font-style:italic; color:#c9cbd1; border-left:2px solid #4a4d55; padding-left:6px; margin:4px 0; }
+  .note audio { width:100%; margin-top:4px; height:36px; }
+  .note.flash { animation: flash 1.6s ease-out 1; }
+  .cat-Remarque { border-left-color:#5b8def; } .cat-Question { border-left-color:#e3b341; }
+  .cat-Critique { border-left-color:#e5534b; } .cat-Point { border-left-color:#57ab5a; }
+  .cat-Coquille { border-left-color:#9a9ca3; }
+  /* écran d'accueil : bibliothèque */
+  #accueil { position:fixed; inset:0; background:var(--fond); z-index:30; overflow:auto; padding:16px;
+             padding-top:calc(16px + env(safe-area-inset-top)); display:none; }
+  #accueil.ouvert { display:block; }
+  #accueil h1 { font-size:22px; margin:4px 0 12px; }
+  .doc { background:var(--carte); border-radius:10px; padding:12px; margin-bottom:8px; display:flex; gap:8px; align-items:center; }
+  .doc .nom { flex:1; overflow:hidden; text-overflow:ellipsis; }
+  .doc small { display:block; color:var(--gris); }
+  #aide { color:var(--gris); font-size:14px; margin-top:18px; }
+  #menuexp { display:none; flex-direction:column; gap:6px; background:var(--carte); border-radius:10px; padding:8px; }
+  #menuexp.ouvert { display:flex; }
+  input[type=file] { display:none; }
+</style>
+</head>
+<body>
+<div id="barre">
+  <button id="bbiblio" title="Bibliothèque et ouverture d'un PDF">📂</button>
+  <span id="titre">Lecteur</span>
+  <button id="pprec" title="Page précédente">◀</button>
+  <span id="page">–</span>
+  <button id="psuiv" title="Page suivante">▶</button>
+  <button id="zmoins" title="Zoom −">−</button>
+  <button id="zplus" title="Zoom +">+</button>
+  <button id="bnotes" title="Commentaires">💬<span id="nbbadge">0</span></button>
+</div>
+<div id="vue"><div id="feuille"><canvas id="canv"></canvas><div id="surl"></div><div id="couche" class="textLayer"></div></div></div>
+<button id="bcit">💬 Commenter ce passage</button>
+
+<div id="panneau">
+  <h2><span>Commentaires (<b id="nb">0</b>)</span>
+    <button id="bexp">Exporter…</button><button id="fermer" title="Fermer">✕</button></h2>
+  <div id="menuexp">
+    <button id="partager" class="prim">Partager JSON + Markdown + LaTeX (vers Dropbox…)</button>
+    <button id="importer">Importer des commentaires (JSON)</button>
+  </div>
+  <div id="saisie">
+    <div id="ctx">p. –</div>
+    <div id="citsaisie"><span></span> <button id="sanscit" style="min-height:30px;padding:2px 8px">Retirer la citation</button></div>
+    <textarea id="texte" placeholder="Votre commentaire… (ou 🎤 pour dicter, ou le micro du clavier)"></textarea>
+    <div class="ligne">
+      <button id="micro" title="Dicter le commentaire">🎤 Dicter</button>
+      <button id="memo" title="Enregistrer un mémo vocal joint au commentaire">⏺ Mémo</button>
+      <select id="cat" title="Catégorie">
+        <option>Remarque</option><option>Question</option><option>Critique</option>
+        <option value="Point fort">Point fort</option><option>Coquille</option>
+      </select>
+      <button id="ajouter" class="prim">Enregistrer</button>
+      <button id="annuler" style="display:none">Annuler</button>
+    </div>
+    <div id="etatmemo" style="font-size:13px;color:var(--gris)"></div>
+  </div>
+  <div class="ligne">
+    <select id="filtre"><option value="tout">Tous les commentaires</option><option value="page">Cette page</option></select>
+    <span id="etat">–</span>
+  </div>
+  <div id="lnotes"></div>
+</div>
+
+<div id="accueil">
+  <h1>Lecteur de thèse</h1>
+  <button id="ouvrir" class="prim" style="width:100%">📂 Ouvrir un PDF (téléphone, Dropbox…)</button>
+  <h2 style="font-size:17px;margin:18px 0 8px">Documents déjà ouverts (disponibles hors ligne)</h2>
+  <div id="ldocs"></div>
+  <div id="aide">
+    Appui long sur le texte pour sélectionner un passage, puis « Commenter ce passage ».
+    Glisser à gauche ou à droite pour tourner les pages.<br><br>
+    Dictée : bouton 🎤, ou le micro du clavier (Samsung ou Gboard). Pour dicter <b>sans réseau</b>, installer le
+    français hors ligne dans le clavier (Gboard : Paramètres › Saisie vocale › Reconnaissance vocale hors connexion).
+    Le bouton ⏺ Mémo enregistre votre voix et la joint au commentaire : il marche toujours hors ligne.<br><br>
+    Tout reste dans le téléphone. « Exporter… › Partager » envoie les commentaires (JSON, Markdown, LaTeX, mémos)
+    où vous voulez, par exemple dans la Dropbox ; le lecteur du poste relit le JSON.
+  </div>
+</div>
+<div id="verrou" style="position:fixed;inset:0;z-index:50;background:var(--fond);display:none;flex-direction:column;gap:12px;
+     align-items:stretch;justify-content:center;padding:24px">
+  <h1 style="font-size:22px;margin:0">Lecteur de thèse</h1>
+  <div id="vmsg" style="color:var(--gris)"></div>
+  <input id="vmdp" type="password" autocomplete="current-password" placeholder="Mot de passe"
+         style="font-size:18px;padding:12px;border-radius:8px;border:1px solid #4a4d55;background:#1e1f22;color:var(--txt)">
+  <input id="vmdp2" type="password" autocomplete="new-password" placeholder="Encore une fois" style="display:none;font-size:18px;
+         padding:12px;border-radius:8px;border:1px solid #4a4d55;background:#1e1f22;color:var(--txt)">
+  <button id="vok" class="prim">Ouvrir</button>
+  <div id="verr" style="color:#f8a;min-height:20px"></div>
+</div>
+<input type="file" id="fpdf" accept="application/pdf,.pdf">
+<input type="file" id="fjson" accept="application/json,.json">
+
+<script>
+  addEventListener('error', e => { const d = document.getElementById('etat'); if (d) d.textContent = 'Erreur : ' + e.message; });
+  addEventListener('unhandledrejection', e => { const d = document.getElementById('etat'); if (d) d.textContent = 'Erreur : ' + e.reason; });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+<script src="pdfjs/pdf.min.js"></script>  <!-- pdf.js 3.11.174, copie locale (hors ligne) -->
+<script type="module">
+const $ = id => document.getElementById(id);
+const vue = $('vue'), feuille = $('feuille'), couche = $('couche');
+let canv = $('canv');
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdfjs/pdf.worker.min.js';
+const PX = 96 / 72;
+
+// ===================== stockage local (IndexedDB) =====================
+// docs  : {id, nom, taille, pdf (Blob), ajoute, ouvert, page, zoom}
+// notes : {id (= id du doc), data: {version, maj, titre, items}}
+// memos : {id (= id du commentaire), blob, type}
+const base = await new Promise((ok, ko) => {
+  const r = indexedDB.open('lecteur-mobile', 1);
+  r.onupgradeneeded = () => { for (const s of ['docs', 'notes', 'memos']) r.result.createObjectStore(s, { keyPath: 'id' }); };
+  r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error);
+});
+const tx = (s, m, f) => new Promise((ok, ko) => { const t = base.transaction(s, m), q = f(t.objectStore(s));
+  t.oncomplete = () => ok(q && q.result); t.onerror = () => ko(t.error); });
+const lit = (s, id) => tx(s, 'readonly', o => o.get(id));
+const ecrit = (s, v) => tx(s, 'readwrite', o => o.put(v));
+const efface = (s, id) => tx(s, 'readwrite', o => o.delete(id));
+const tous = s => tx(s, 'readonly', o => o.getAll());
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist();   // évite qu'Android vide le stockage
+
+// ===================== document ouvert =====================
+let docCourant = null, pdf = null, nbPages = 0, pageAffichee = 0, pageRendue = 0, numRendu = 0, tache = null, tacheTxt = null;
+let zoom = 'l', echActuelle = 1;                 // 'l' pleine largeur, 'h' page entière, ou un pourcentage
+let notes = { version: 1, maj: '', items: [] };
+
+async function ouvreFichier(f) {
+  const id = f.name + '|' + f.size;
+  let d = await lit('docs', id);
+  if (!d) d = { id, nom: f.name, taille: f.size, pdf: f, ajoute: new Date().toISOString(), page: 1, zoom: 'l' };
+  else if (!d.pdf) d.pdf = f;
+  d.ouvert = new Date().toISOString();
+  await ecrit('docs', d);
+  await ouvreDoc(d);
+}
+async function ouvreDoc(d) {
+  docCourant = d; $('accueil').classList.remove('ouvert');
+  $('titre').textContent = d.nom.replace(/\.pdf$/i, '').replace(/_/g, ' ');
+  document.title = $('titre').textContent;
+  const donnees = await d.pdf.arrayBuffer();
+  if (pdf) pdf.destroy();
+  pdf = await pdfjsLib.getDocument({ data: donnees }).promise;
+  nbPages = pdf.numPages; zoom = d.zoom || 'l'; pageAffichee = 0; pageRendue = 0;
+  const n = await lit('notes', d.id);
+  notes = n ? n.data : { version: 1, maj: '', titre: $('titre').textContent, items: [] };
+  for (const x of notes.items) if (x.audio && !x.audioUrl) {
+    const m = await lit('memos', x.id); if (m) x.audioUrl = URL.createObjectURL(m.blob); }
+  etat(notes.items.length ? notes.items.length + ' commentaire(s)' : 'Aucun commentaire pour l\'instant');
+  affiche(d.page || 1, true);
+}
+async function sauveDoc() { if (docCourant) { docCourant.page = pageAffichee; docCourant.zoom = zoom; await ecrit('docs', docCourant); } }
+
+// ===================== rendu des pages (pdf.js) =====================
+function echelle(w0, h0) {
+  const W = vue.clientWidth - 16, H = vue.clientHeight - 16;
+  if (zoom === 'h') return Math.min(W / w0, H / h0);
+  if (zoom === 'l') return W / w0;
+  return +zoom / 100;
+}
+async function rendu() {
+  if (!pdf) return;
+  const n = pageAffichee, ticket = ++numRendu;
+  const page = await pdf.getPage(n);
+  if (ticket !== numRendu) return;
+  const v1 = page.getViewport({ scale: PX }), s = echelle(v1.width, v1.height);
+  const vp = page.getViewport({ scale: PX * s }), dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const nouvelle = document.createElement('canvas');
+  nouvelle.width = Math.floor(vp.width * dpr); nouvelle.height = Math.floor(vp.height * dpr);
+  echActuelle = s;
+  if (tache) tache.cancel();
+  tache = page.render({ canvasContext: nouvelle.getContext('2d'), viewport: vp, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null });
+  try { await tache.promise; } catch (e) { return; }
+  if (ticket !== numRendu) return;
+  nouvelle.id = 'canv'; nouvelle.style.width = vp.width + 'px'; nouvelle.style.height = vp.height + 'px';
+  feuille.style.width = vp.width + 'px'; feuille.style.height = vp.height + 'px';
+  canv.replaceWith(nouvelle); canv = nouvelle;
+  if (n !== pageRendue) { vue.scrollTop = 0; vue.scrollLeft = 0; pageRendue = n; }
+  if (tacheTxt) tacheTxt.cancel();
+  couche.innerHTML = '';
+  couche.style.setProperty('--scale-factor', vp.scale);
+  tacheTxt = pdfjsLib.renderTextLayer({ textContentSource: page.streamTextContent(), container: couche, viewport: vp, textDivs: [] });
+  await tacheTxt.promise.catch(() => {});
+  if (ticket !== numRendu) return;
+  const fin = document.createElement('div'); fin.className = 'endOfContent'; couche.append(fin);
+  dessineSurl();
+}
+function affiche(n, force) {
+  if (!pdf) return;
+  n = Math.min(Math.max(1, n), nbPages);
+  if (n === pageAffichee && !force) return;
+  pageAffichee = n; oublieSel();
+  $('page').textContent = `${n} / ${nbPages}`;
+  majNotes(); rendu(); sauveDoc();
+}
+function setZoom(z) { zoom = String(z); rendu(); sauveDoc(); }
+function pasZoom(d) {
+  const c = Math.round(echActuelle * 100);
+  setZoom(Math.min(400, Math.max(30, d > 0 ? Math.floor(c / 10) * 10 + 10 : Math.ceil(c / 10) * 10 - 10)));
+}
+$('pprec').onclick = () => affiche(pageAffichee - 1);
+$('psuiv').onclick = () => affiche(pageAffichee + 1);
+$('zplus').onclick = () => pasZoom(1);
+$('zmoins').onclick = () => pasZoom(-1);
+$('page').onclick = () => { const p = prompt('Aller à la page', pageAffichee); if (p) affiche(+p); };
+let attenteTaille = 0;
+addEventListener('resize', () => { if (zoom === 'h' || zoom === 'l') { clearTimeout(attenteTaille); attenteTaille = setTimeout(rendu, 200); } });
+
+// tourner les pages en glissant (seulement si la page tient en largeur et sans sélection en cours)
+let gl = null;
+vue.addEventListener('touchstart', e => { if (e.touches.length === 1) gl = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: e.timeStamp }; }, { passive: true });
+vue.addEventListener('touchend', e => {
+  if (!gl || e.changedTouches.length !== 1) return;
+  const dx = e.changedTouches[0].clientX - gl.x, dy = e.changedTouches[0].clientY - gl.y, dt = e.timeStamp - gl.t; gl = null;
+  const larg = vue.scrollWidth <= vue.clientWidth + 2;
+  if (!larg || dt > 600 || Math.abs(dx) < 70 || Math.abs(dy) > Math.abs(dx) * 0.6) return;
+  if (!getSelection().isCollapsed) return;
+  affiche(pageAffichee + (dx < 0 ? 1 : -1));
+}, { passive: true });
+// double appui : bascule pleine largeur / 200 %
+let dernierAppui = 0;
+vue.addEventListener('touchend', e => {
+  if (e.timeStamp - dernierAppui < 300 && getSelection().isCollapsed) setZoom(zoom === 'l' ? 200 : 'l');
+  dernierAppui = e.timeStamp;
+}, { passive: true });
+
+// ===================== bibliothèque =====================
+async function majBiblio() {
+  const ds = (await tous('docs')).sort((a, b) => (b.ouvert || '').localeCompare(a.ouvert || ''));
+  const nb = {}; for (const n of await tous('notes')) nb[n.id] = n.data.items.length;
+  $('ldocs').innerHTML = ds.map(d => `<div class="doc" data-id="${esc(d.id)}">
+      <div class="nom">${esc(d.nom)}<small>p. ${d.page || 1} · ${nb[d.id] || 0} commentaire(s) · ${Math.round(d.taille / 1e5) / 10} Mo</small></div>
+      <button data-a="ouvrir" class="prim">Ouvrir</button><button data-a="suppr" class="rouge">✕</button></div>`).join('')
+    || '<div style="color:var(--gris)">Aucun document pour l\'instant.</div>';
+}
+$('ldocs').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const id = b.closest('.doc').dataset.id;
+  if (b.dataset.a === 'ouvrir') ouvreDoc(await lit('docs', id));
+  else if (b.dataset.ok) {
+    const n = await lit('notes', id);
+    if (n) for (const x of n.data.items) if (x.audio) await efface('memos', x.id);
+    await efface('docs', id); await efface('notes', id); majBiblio();
+  } else { b.dataset.ok = 1; b.textContent = 'Supprimer PDF et commentaires ?'; setTimeout(() => { b.textContent = '✕'; delete b.dataset.ok; }, 4000); }
+});
+$('bbiblio').onclick = () => { majBiblio(); $('accueil').classList.add('ouvert'); };
+$('ouvrir').onclick = () => $('fpdf').click();
+$('fpdf').onchange = () => { const f = $('fpdf').files[0]; $('fpdf').value = ''; if (f) ouvreFichier(f); };
+if ('launchQueue' in window) launchQueue.setConsumer(async p => { if (p.files.length) ouvreFichier(await p.files[0].getFile()); });
+
+// ===================== commentaires =====================
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const maintenant = () => new Date().toISOString();
+function etat(txt, ko) { $('etat').textContent = txt; $('etat').classList.toggle('ko', !!ko); }
+let enEdition = null, ctxSaisie = null, citSaisie = null, derniereSel = null, aFlasher = null, memoEnCours = null;
+
+async function enregistre() {
+  notes.maj = maintenant(); notes.titre = $('titre').textContent;
+  const propre = { ...notes, items: notes.items.map(({ audioUrl, ...x }) => x) };
+  await ecrit('notes', { id: docCourant.id, data: propre });
+  etat('Enregistré dans le téléphone à ' + new Date().toLocaleTimeString('fr-FR'));
+  majNotes();
+}
+// sélection d'un passage : citation + zones (fractions de la page), comme le lecteur du poste
+function lisSelection() {
+  const sel = getSelection();
+  if (!sel.rangeCount || sel.isCollapsed || !couche.contains(sel.anchorNode) || !couche.contains(sel.focusNode)) return null;
+  const citation = sel.toString().replace(/-\s*\n\s*/g, '').replace(/\s+/g, ' ').trim();
+  if (!citation) return null;
+  const F = feuille.getBoundingClientRect(), rs = [...sel.getRangeAt(0).getClientRects()]
+    .filter(r => r.width > 1 && r.height > 1).map(r => ({ l: r.left - F.left, t: r.top - F.top, r: r.right - F.left, b: r.bottom - F.top }))
+    .sort((a, b) => a.t - b.t || a.l - b.l);
+  const L = [];
+  for (const r of rs) {
+    const p = L[L.length - 1];
+    if (p && Math.abs(r.t - p.t) < 4 && Math.abs(r.b - p.b) < 4 && r.l <= p.r + 6) { p.r = Math.max(p.r, r.r); p.l = Math.min(p.l, r.l); }
+    else L.push({ ...r });
+  }
+  const q = x => Math.round(x * 10000) / 10000;
+  return { page: pageAffichee, citation, zones: L.map(r => [q(r.l / F.width), q(r.t / F.height), q((r.r - r.l) / F.width), q((r.b - r.t) / F.height)]) };
+}
+function oublieSel() { derniereSel = null; $('bcit').style.display = 'none'; }
+let attenteSel = 0;
+document.addEventListener('selectionchange', () => {
+  clearTimeout(attenteSel);
+  attenteSel = setTimeout(() => {
+    const s = lisSelection();
+    if (s) { derniereSel = s; $('bcit').style.display = 'block'; }
+    else if (getSelection().isCollapsed) $('bcit').style.display = 'none';
+  }, 250);
+});
+$('bcit').onclick = () => { ouvrePanneau(); nouvelleSaisie(); $('texte').focus(); };
+// appui court sur un surlignage : on montre son commentaire
+feuille.addEventListener('click', e => {
+  if (!getSelection().isCollapsed) return;
+  const F = feuille.getBoundingClientRect(), x = (e.clientX - F.left) / F.width, y = (e.clientY - F.top) / F.height;
+  const n = notes.items.find(n => n.page === pageAffichee && n.zones &&
+                                  n.zones.some(([a, b, w, h]) => x >= a && x <= a + w && y >= b - 0.004 && y <= b + h + 0.004));
+  if (n) { ouvrePanneau(); montreNote(n.id); }
+});
+function dessineSurl() {
+  const S = $('surl'), z = [];
+  for (const n of notes.items) if (n.page === pageAffichee && n.zones)
+    for (const [a, b, w, h] of n.zones) z.push(`<div class="sl cat-${n.cat.split(' ')[0]}${aFlasher === n.id ? ' flash' : ''}" style="left:${a * 100}%;top:${b * 100}%;width:${w * 100}%;height:${h * 100}%"></div>`);
+  if (citSaisie && citSaisie.page === pageAffichee && !enEdition)
+    for (const [a, b, w, h] of citSaisie.zones) z.push(`<div class="sl attente" style="left:${a * 100}%;top:${b * 100}%;width:${w * 100}%;height:${h * 100}%"></div>`);
+  S.innerHTML = z.join(''); aFlasher = null;
+}
+function montreNote(id) {
+  $('filtre').value = 'tout'; majNotes();
+  const d = $('lnotes').querySelector(`[data-id="${id}"]`);
+  if (d) { d.scrollIntoView({ block: 'center', behavior: 'smooth' }); d.classList.remove('flash'); void d.offsetWidth; d.classList.add('flash'); }
+}
+function majCitSaisie() {
+  const c = enEdition ? (enEdition.citation ? enEdition : null) : citSaisie;
+  $('citsaisie').style.display = c ? 'block' : 'none';
+  if (c) $('citsaisie').firstElementChild.textContent = '« ' + (c.citation.length > 160 ? c.citation.slice(0, 160) + '…' : c.citation) + ' »';
+}
+$('sanscit').onclick = () => { if (enEdition) { delete enEdition.citation; delete enEdition.zones; } else citSaisie = null; majCitSaisie(); dessineSurl(); };
+const trie = a => a.sort((x, y) => x.page - y.page || (x.cree < y.cree ? -1 : 1));
+
+function majNotes() {
+  $('nb').textContent = $('nbbadge').textContent = notes.items.length;
+  if (!enEdition && !ctxSaisie) $('ctx').textContent = `p. ${pageAffichee || '–'}`;
+  const f = $('filtre').value;
+  const lst = trie(notes.items.filter(n => f === 'tout' || n.page === pageAffichee));
+  $('lnotes').innerHTML = lst.map(n => `
+    <div class="note cat-${n.cat.split(' ')[0]}${n.page === pageAffichee ? ' ici' : ''}" data-id="${n.id}">
+      <div class="tete"><b>p. ${n.page}</b> ${esc(n.cat)}${n.source === 'poste' ? ' · poste' : ''}
+        <span class="act"><button data-a="aller">Aller</button><button data-a="modif">Modifier</button><button data-a="suppr">✕</button></span></div>
+      ${n.citation ? `<div class="cit">« ${esc(n.citation)} »</div>` : ''}<div class="corps">${esc(n.texte)}</div>
+      ${n.audioUrl ? `<audio controls preload="none" src="${n.audioUrl}"></audio>` : ''}</div>`).join('')
+    || '<div style="color:var(--gris)">Aucun commentaire à afficher.</div>';
+  dessineSurl();
+}
+$('filtre').onchange = majNotes;
+$('lnotes').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const id = b.closest('.note').dataset.id, n = notes.items.find(x => x.id === id);
+  if (b.dataset.a === 'aller') { aFlasher = n.zones ? n.id : null; fermePanneau(); affiche(n.page); dessineSurl(); }
+  else if (b.dataset.a === 'modif') {
+    enEdition = n; $('texte').value = n.texte; $('cat').value = n.cat; majCitSaisie();
+    $('ctx').textContent = `Modification du commentaire p. ${n.page}`;
+    $('ajouter').textContent = 'Enregistrer la modification'; $('annuler').style.display = '';
+    $('texte').focus();
+  } else if (b.dataset.ok) {
+    notes.items = notes.items.filter(x => x.id !== id);
+    if (n.audio) await efface('memos', id);
+    enregistre();
+  } else { b.dataset.ok = 1; b.textContent = 'Supprimer ?'; setTimeout(() => { b.textContent = '✕'; delete b.dataset.ok; }, 3000); }
+});
+function nouvelleSaisie() {
+  if (enEdition || ctxSaisie) return;
+  ctxSaisie = { page: pageAffichee };
+  if (derniereSel && derniereSel.page === pageAffichee) citSaisie = derniereSel;
+  $('ctx').textContent = `Nouveau commentaire${citSaisie ? ' sur le passage' : ''} : p. ${ctxSaisie.page}`;
+  majCitSaisie(); $('bcit').style.display = 'none'; dessineSurl();
+}
+$('texte').addEventListener('focus', nouvelleSaisie);
+const CLEB = () => 'brouillon-' + (docCourant ? docCourant.id : '');
+$('texte').addEventListener('input', () => localStorage.setItem(CLEB(), $('texte').value));
+function finSaisie() {
+  arreteDictee();
+  enEdition = null; ctxSaisie = null; citSaisie = null; derniereSel = null; memoEnCours = null; $('texte').value = '';
+  $('etatmemo').textContent = '';
+  $('ajouter').textContent = 'Enregistrer'; $('annuler').style.display = 'none';
+  getSelection().removeAllRanges(); $('bcit').style.display = 'none'; majCitSaisie();
+  $('texte').blur(); majNotes();
+}
+$('ajouter').onclick = async () => {
+  if (enregistreur && enregistreur.state === 'recording') { enregistreur.stop(); await new Promise(ok => setTimeout(ok, 400)); }
+  const txt = $('texte').value.trim();
+  if (!txt && !memoEnCours) { finSaisie(); return; }
+  if (enEdition) { enEdition.texte = txt; enEdition.cat = $('cat').value; enEdition.modifie = maintenant(); }
+  else {
+    const c = ctxSaisie || { page: pageAffichee };
+    const n = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), cree: maintenant(), source: 'mobile',
+                chap: -1, chapTitre: 'Document', page: c.page, t: 0, cat: $('cat').value, texte: txt || '(mémo vocal)',
+                ...(citSaisie ? { citation: citSaisie.citation, zones: citSaisie.zones } : {}) };
+    if (memoEnCours) {
+      await ecrit('memos', { id: n.id, blob: memoEnCours.blob, type: memoEnCours.blob.type });
+      n.audio = true; n.audioDuree = memoEnCours.duree; n.audioUrl = URL.createObjectURL(memoEnCours.blob);
+    }
+    notes.items.push(n);
+  }
+  localStorage.removeItem(CLEB());
+  await enregistre();
+  finSaisie();
+};
+$('annuler').onclick = finSaisie;
+
+// ----- dictée : reconnaissance vocale du navigateur (Chrome Android), sinon le micro du clavier -----
+const Reco = window.SpeechRecognition || window.webkitSpeechRecognition;
+let reco = null, recoActive = false;
+function arreteDictee() { if (reco && recoActive) reco.stop(); }
+if (!Reco) $('micro').style.display = 'none';
+$('micro').onclick = () => {
+  if (recoActive) { reco.stop(); return; }
+  nouvelleSaisie();
+  reco = new Reco(); reco.lang = 'fr-FR'; reco.continuous = true; reco.interimResults = true;
+  const ta = $('texte'), debut = ta.value && !/\s$/.test(ta.value) ? ta.value + ' ' : ta.value;
+  let acquis = '';
+  reco.onresult = e => {
+    let prov = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const r = e.results[i];
+      if (r.isFinal) acquis += r[0].transcript.trim() + ' '; else prov += r[0].transcript;
+    }
+    ta.value = debut + acquis + prov;
+    localStorage.setItem(CLEB(), ta.value);
+  };
+  reco.onstart = () => { recoActive = true; $('micro').classList.add('actif'); $('micro').textContent = '■ Arrêter'; };
+  reco.onend = () => { recoActive = false; $('micro').classList.remove('actif'); $('micro').textContent = '🎤 Dicter'; };
+  reco.onerror = e => {
+    etat(e.error === 'network' || e.error === 'service-not-allowed' || e.error === 'language-not-supported'
+         ? 'Dictée du navigateur indisponible hors ligne : utilisez le micro du clavier, ou ⏺ Mémo.'
+         : e.error === 'not-allowed' ? 'Micro refusé : autorisez-le dans les réglages de l\'application.'
+         : 'Dictée : ' + e.error, true);
+  };
+  try { reco.start(); } catch (e) { etat('Dictée : ' + e.message, true); }
+};
+
+// ----- mémo vocal : enregistré dans le téléphone, joint au commentaire (marche toujours hors ligne) -----
+let enregistreur = null;
+$('memo').onclick = async () => {
+  if (enregistreur && enregistreur.state === 'recording') { enregistreur.stop(); return; }
+  nouvelleSaisie(); arreteDictee();
+  let flux;
+  try { flux = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch (e) { etat('Micro refusé : autorisez-le dans les réglages de l\'application.', true); return; }
+  const type = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : '';
+  enregistreur = new MediaRecorder(flux, type ? { mimeType: type } : {});
+  const morceaux = [], t0 = Date.now();
+  enregistreur.ondataavailable = e => { if (e.data.size) morceaux.push(e.data); };
+  enregistreur.onstop = () => {
+    flux.getTracks().forEach(t => t.stop());
+    const blob = new Blob(morceaux, { type: enregistreur.mimeType || 'audio/webm' });
+    memoEnCours = { blob, duree: Math.round((Date.now() - t0) / 1000) };
+    $('memo').classList.remove('actif'); $('memo').textContent = '⏺ Mémo';
+    $('etatmemo').innerHTML = `Mémo vocal de ${memoEnCours.duree} s prêt à joindre <audio controls src="${URL.createObjectURL(blob)}" style="height:32px;vertical-align:middle;max-width:60%"></audio>`;
+  };
+  enregistreur.start();
+  $('memo').classList.add('actif'); $('memo').textContent = '■ Fin du mémo';
+  $('etatmemo').textContent = 'Enregistrement…';
+};
+
+// ===================== panneau =====================
+function ouvrePanneau() { $('panneau').classList.add('ouvert'); majNotes(); }
+function fermePanneau() { $('panneau').classList.remove('ouvert'); $('menuexp').classList.remove('ouvert'); }
+$('bnotes').onclick = () => $('panneau').classList.contains('ouvert') ? fermePanneau() : ouvrePanneau();
+$('fermer').onclick = fermePanneau;
+$('bexp').onclick = () => $('menuexp').classList.toggle('ouvert');
+
+// ===================== export (vers Dropbox par le partage Android) et import =====================
+function exportMd() {
+  const L = [`# Commentaires — ${notes.titre}`, '', `_Export du ${new Date().toLocaleString('fr-FR')} (lecteur mobile) — ${notes.items.length} commentaire(s)_`, ''];
+  const fond = trie(notes.items.filter(n => n.cat !== 'Coquille')), forme = trie(notes.items.filter(n => n.cat === 'Coquille'));
+  for (const n of fond) L.push(`- **p. ${n.page}** (${n.cat}) — ${n.citation ? '« ' + n.citation + ' » — ' : ''}${n.texte.replace(/\n/g, '\n  ')}${n.audio ? ` [mémo vocal : ${nomMemo(n)}]` : ''}`);
+  if (forme.length) { L.push('', '## Coquilles et remarques de forme', '');
+    for (const n of forme) L.push(`- p. ${n.page} : ${n.citation ? '« ' + n.citation + ' » → ' : ''}${n.texte.replace(/\n/g, ' ')}`); }
+  return L.join('\n') + '\n';
+}
+const texte2tex = s => s.replace(/([&%#])/g, '\\$1').replace(/\n\s*\n/g, '\n\n').replace(/«\s*/g, '\\og ').replace(/\s*»/g, '\\fg{}');
+const citTex = s => s.replace(/\\/g, '\\textbackslash{}').replace(/([&%#$_{}])/g, '\\$1').replace(/\^/g, '\\^{}').replace(/~/g, '\\~{}');
+const avecCit = (n, sep) => (n.citation ? `\\og \\textit{${citTex(n.citation)}}\\fg{}${sep}` : '') + texte2tex(n.texte);
+function exportTex() {
+  const L = [`% Commentaires de lecture — ${notes.titre}`, `% Export du ${new Date().toLocaleString('fr-FR')} (lecteur mobile). À intégrer dans le rapport.`, ''];
+  const fond = trie(notes.items.filter(n => n.cat !== 'Coquille')), forme = trie(notes.items.filter(n => n.cat === 'Coquille'));
+  if (fond.length) { L.push('\\begin{itemize}'); for (const n of fond) L.push(`  \\item[p.~${n.page}] \\textit{(${n.cat})} ${avecCit(n, ' --- ')}`); L.push('\\end{itemize}', ''); }
+  if (forme.length) { L.push('\\paragraph{Coquilles et remarques de forme}', '\\begin{itemize}');
+    for (const n of forme) L.push(`  \\item[p.~${n.page}] ${avecCit(n, ' $\\to$ ')}`); L.push('\\end{itemize}'); }
+  return L.join('\n') + '\n';
+}
+const racine = () => 'commentaires_' + (notes.titre || 'document').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]+/g, '_').slice(0, 40);
+const nomMemo = n => `${racine()}_memo_p${n.page}_${n.id}.webm`;
+$('partager').onclick = async () => {
+  if (!docCourant) return;
+  const propre = { ...notes, document: docCourant.nom, items: notes.items.map(({ audioUrl, ...x }) => x) };
+  const fichiers = [new File([JSON.stringify(propre, null, 1)], racine() + '.json', { type: 'application/json' }),
+                    new File([exportMd()], racine() + '.md', { type: 'text/markdown' }),
+                    new File([exportTex()], racine() + '.tex', { type: 'text/plain' })];
+  for (const n of notes.items) if (n.audio) { const m = await lit('memos', n.id); if (m) fichiers.push(new File([m.blob], nomMemo(n), { type: m.type || 'audio/webm' })); }
+  if (navigator.canShare && navigator.canShare({ files: fichiers })) {
+    try { await navigator.share({ files: fichiers, title: 'Commentaires — ' + notes.titre }); etat('Partagé : ' + fichiers.length + ' fichier(s)'); }
+    catch (e) { if (e.name !== 'AbortError') etat('Partage impossible : ' + e.message, true); }
+  } else {                                       // pas de partage de fichiers : téléchargements
+    for (const f of fichiers) { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); }
+    etat('Fichiers téléchargés (dossier Téléchargements)');
+  }
+};
+$('importer').onclick = () => $('fjson').click();
+$('fjson').onchange = async () => {             // fusion : on garde la version la plus récente de chaque commentaire
+  const f = $('fjson').files[0]; $('fjson').value = ''; if (!f || !docCourant) return;
+  let d; try { d = JSON.parse(await f.text()); } catch (e) { etat('Fichier JSON illisible', true); return; }
+  if (!d || !Array.isArray(d.items)) { etat('Ce fichier ne contient pas de commentaires', true); return; }
+  let ajoutes = 0, maj = 0;
+  for (const x of d.items) {
+    const date = y => y.modifie || y.cree || '';
+    const i = notes.items.findIndex(y => y.id === x.id);
+    if (i < 0) { notes.items.push({ ...x, source: x.source || 'poste' }); ajoutes++; }
+    else if (date(x) > date(notes.items[i])) { notes.items[i] = { ...x, audio: notes.items[i].audio, audioUrl: notes.items[i].audioUrl }; maj++; }
+  }
+  await enregistre();
+  etat(`Importé : ${ajoutes} nouveau(x), ${maj} mis à jour`);
+};
+
+// ===================== verrou : mot de passe choisi à la première ouverture, demandé à chaque ouverture =====================
+// Seule l'empreinte PBKDF2 (sel aléatoire, 200 000 tours) est gardée dans le téléphone, jamais le mot de passe.
+async function empreinte(mdp, sel) {
+  const cle = await crypto.subtle.importKey('raw', new TextEncoder().encode(mdp), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: sel, iterations: 200000 }, cle, 256);
+  return btoa(String.fromCharCode(...new Uint8Array(bits)));
+}
+await new Promise(ok => {
+  const V = JSON.parse(localStorage.getItem('verrou') || 'null'), premier = !V;
+  $('verrou').style.display = 'flex';
+  $('vmsg').textContent = premier ? 'Première ouverture : choisissez le mot de passe du lecteur. Il sera demandé à chaque ouverture.'
+                                  : 'Mot de passe du lecteur :';
+  if (premier) { $('vmdp2').style.display = ''; $('vmdp').autocomplete = 'new-password'; $('vok').textContent = 'Choisir ce mot de passe'; }
+  const valide = async () => {
+    const m = $('vmdp').value;
+    if (premier) {
+      if (m.length < 4) { $('verr').textContent = 'Au moins 4 caractères.'; return; }
+      if (m !== $('vmdp2').value) { $('verr').textContent = 'Les deux mots de passe diffèrent.'; return; }
+      const sel = crypto.getRandomValues(new Uint8Array(16));
+      localStorage.setItem('verrou', JSON.stringify({ sel: btoa(String.fromCharCode(...sel)), h: await empreinte(m, sel) }));
+    } else {
+      const sel = Uint8Array.from(atob(V.sel), c => c.charCodeAt(0));
+      if (await empreinte(m, sel) !== V.h) { $('verr').textContent = 'Mot de passe incorrect.'; $('vmdp').value = ''; return; }
+    }
+    $('vmdp').value = $('vmdp2').value = ''; $('verrou').style.display = 'none'; ok();
+  };
+  $('vok').onclick = valide;
+  for (const i of ['vmdp', 'vmdp2']) $(i).addEventListener('keydown', e => { if (e.key === 'Enter') valide(); });
+  $('vmdp').focus();
+});
+
+// ===================== démarrage =====================
+const ds =(await tous('docs')).sort((a, b) => (b.ouvert || '').localeCompare(a.ouvert || ''));
+if (ds.length) {
+  await ouvreDoc(ds[0]);
+  const b = localStorage.getItem(CLEB()); if (b) $('texte').value = b;
+} else { majBiblio(); $('accueil').classList.add('ouvert'); }
+</script>
+</body>
+</html>
