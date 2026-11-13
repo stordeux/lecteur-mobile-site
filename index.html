@@ -91,21 +91,51 @@
   #menuexp { display:none; flex-direction:column; gap:6px; background:var(--carte); border-radius:10px; padding:8px; }
   #menuexp.ouvert { display:flex; }
   input[type=file] { display:none; }
+  button:disabled { opacity:.35; }
+  /* flèches de page : grandes, en bas de l'écran, sous le panneau des commentaires */
+  .fleche { position:fixed; z-index:5; bottom:calc(14px + env(safe-area-inset-bottom)); width:56px; height:56px; min-height:56px;
+            border-radius:50%; padding:0; font-size:22px; background:rgba(56,58,64,.85); box-shadow:0 2px 10px #0008; }
+  #pprec { left:10px; } #psuiv { right:10px; }
+  /* tiroir de gauche : table des matières */
+  #voile { position:fixed; inset:0; background:#0009; z-index:24; display:none; }
+  #voile.ouvert { display:block; }
+  #tiroir { position:fixed; top:0; bottom:0; left:0; width:min(86vw, 380px); background:var(--fond); z-index:25;
+            display:flex; flex-direction:column; border-right:2px solid var(--accent); box-shadow:6px 0 24px #000a;
+            padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom);
+            transform:translateX(-105%); transition:transform .2s ease; }
+  #tiroir.ouvert { transform:none; }
+  #tiroir h2 { font-size:17px; margin:0; padding:8px 8px 8px 12px; display:flex; align-items:center; gap:8px; background:var(--barre); }
+  #tiroir h2 span { flex:1; }
+  #ltdm { overflow:auto; flex:1; padding:4px 0 12px; }
+  #ltdm ul { list-style:none; margin:0; padding:0; }
+  .tl { display:flex; align-items:center; min-height:44px; border-bottom:1px solid #35373c; }
+  .tl.ici { background:#34405a; box-shadow:4px 0 0 var(--accent) inset; }
+  .tl .pli { flex:none; width:40px; align-self:stretch; display:flex; align-items:center; justify-content:center; color:var(--gris); }
+  .tl .lib { flex:1; padding:8px 4px; overflow-wrap:anywhere; }
+  .tl .pg { flex:none; color:var(--gris); font-size:13px; padding:0 10px; font-variant-numeric:tabular-nums; }
+  .tl.n0 .lib { font-weight:600; }
+  #tdmvide { color:var(--gris); padding:16px; }
 </style>
 </head>
 <body>
 <div id="barre">
+  <button id="btdm" title="Table des matières">☰</button>
   <button id="bbiblio" title="Bibliothèque et ouverture d'un PDF">📂</button>
   <span id="titre">Lecteur</span>
-  <button id="pprec" title="Page précédente">◀</button>
   <span id="page">–</span>
-  <button id="psuiv" title="Page suivante">▶</button>
   <button id="zmoins" title="Zoom −">−</button>
   <button id="zplus" title="Zoom +">+</button>
   <button id="bnotes" title="Commentaires">💬<span id="nbbadge">0</span></button>
 </div>
 <div id="vue"><div id="feuille"><canvas id="canv"></canvas><div id="surl"></div><div id="couche" class="textLayer"></div></div></div>
 <button id="bcit">💬 Commenter ce passage</button>
+<button id="pprec" class="fleche" title="Page précédente (← ou Page préc.)" disabled>◀</button>
+<button id="psuiv" class="fleche" title="Page suivante (→ ou Page suiv.)" disabled>▶</button>
+<div id="voile"></div>
+<div id="tiroir" aria-label="Table des matières">
+  <h2><span>Table des matières</span><button id="ftdm" title="Fermer">✕</button></h2>
+  <div id="ltdm"><div id="tdmvide">Aucun document ouvert.</div></div>
+</div>
 
 <div id="panneau">
   <h2><span>Commentaires (<b id="nb">0</b>)</span>
@@ -224,6 +254,7 @@ async function ouvreDoc(d) {
     const m = await lit('memos', x.id); if (m) x.audioUrl = URL.createObjectURL(m.blob); }
   etat(notes.items.length ? notes.items.length + ' commentaire(s)' : 'Aucun commentaire pour l\'instant');
   affiche(d.page || 1, true);
+  chargeTdm();
 }
 async function sauveDoc() { if (docCourant) { docCourant.page = pageAffichee; docCourant.zoom = zoom; await ecrit('docs', docCourant); } }
 
@@ -267,7 +298,8 @@ function affiche(n, force) {
   if (n === pageAffichee && !force) return;
   pageAffichee = n; oublieSel();
   $('page').textContent = `${n} / ${nbPages}`;
-  majNotes(); rendu(); sauveDoc();
+  $('pprec').disabled = n <= 1; $('psuiv').disabled = n >= nbPages;
+  majNotes(); rendu(); sauveDoc(); majTdm();
 }
 function setZoom(z) { zoom = String(z); rendu(); sauveDoc(); }
 function pasZoom(d) {
@@ -279,6 +311,16 @@ $('psuiv').onclick = () => affiche(pageAffichee + 1);
 $('zplus').onclick = () => pasZoom(1);
 $('zmoins').onclick = () => pasZoom(-1);
 $('page').onclick = () => { const p = prompt('Aller à la page', pageAffichee); if (p) affiche(+p); };
+// clavier (essais sur le poste) : ← → et Page préc. / Page suiv., sauf dans un champ de saisie
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && $('tiroir').classList.contains('ouvert')) { fermeTdm(); return; }
+  if (e.altKey || e.ctrlKey || e.metaKey || !pdf) return;
+  const c = e.target;
+  if (c && (c.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(c.tagName))) return;
+  if ($('verrou').style.display !== 'none' || $('accueil').classList.contains('ouvert')) return;
+  const d = { ArrowLeft: -1, PageUp: -1, ArrowRight: 1, PageDown: 1 }[e.key];
+  if (d) { e.preventDefault(); affiche(pageAffichee + d); }
+});
 let attenteTaille = 0;
 addEventListener('resize', () => { if (zoom === 'h' || zoom === 'l') { clearTimeout(attenteTaille); attenteTaille = setTimeout(rendu, 200); } });
 
@@ -299,6 +341,78 @@ vue.addEventListener('touchend', e => {
   if (e.timeStamp - dernierAppui < 300 && getSelection().isCollapsed) setZoom(zoom === 'l' ? 200 : 'l');
   dernierAppui = e.timeStamp;
 }, { passive: true });
+
+// ===================== table des matières (signets du PDF), tiroir de gauche =====================
+let tdm = [], numTdm = 0;          // entrées à plat, dans l'ordre du document : {titre, page, niv, parent, enfants}
+async function pageDe(dest) {
+  if (typeof dest === 'string') dest = await pdf.getDestination(dest);
+  if (!Array.isArray(dest) || !dest.length) return null;
+  const ref = dest[0];
+  if (Number.isInteger(ref)) return ref + 1;
+  if (ref && typeof ref === 'object') return (await pdf.getPageIndex(ref)) + 1;
+  return null;
+}
+async function chargeTdm() {
+  const ticket = ++numTdm;
+  tdm = []; $('ltdm').innerHTML = '<div id="tdmvide">Lecture de la table des matières…</div>';
+  let plan = null; try { plan = await pdf.getOutline(); } catch (e) {}
+  if (ticket !== numTdm) return;
+  const plat = [];
+  const parcours = async (items, niv, parent) => {
+    for (const it of items || []) {
+      let page = null; try { page = it.dest ? await pageDe(it.dest) : null; } catch (e) {}
+      if (ticket !== numTdm) return;
+      const i = plat.length; plat.push({ titre: (it.title || '').trim() || '(sans titre)', page, niv, parent, enfants: [] });
+      if (parent >= 0) plat[parent].enfants.push(i);
+      await parcours(it.items, niv + 1, i);
+    }
+  };
+  await parcours(plan, 0, -1);
+  if (ticket !== numTdm) return;
+  tdm = plat;
+  if (!tdm.length) { $('ltdm').innerHTML = '<div id="tdmvide">Ce PDF n\'a pas de table des matières.</div>'; return; }
+  const branche = ids => '<ul>' + ids.map(i => { const t = tdm[i], f = t.enfants.length;
+    return `<li><div class="tl n${Math.min(t.niv, 3)}" data-i="${i}" style="padding-left:${t.niv * 16}px">`
+      + `<span class="pli"${f ? ' data-pli="1"' : ''}>${f ? '▸' : ''}</span><span class="lib">${esc(t.titre)}</span>`
+      + `<span class="pg">${t.page || ''}</span></div>${f ? `<div hidden>${branche(t.enfants)}</div>` : ''}</li>`; }).join('') + '</ul>';
+  $('ltdm').innerHTML = branche(tdm.map((t, i) => i).filter(i => tdm[i].parent < 0));
+  majTdm();
+}
+function plie(i, ouvre) {
+  const l = $('ltdm').querySelector(`.tl[data-i="${i}"]`), b = l && l.nextElementSibling;
+  if (!b) return;
+  b.hidden = !ouvre; l.querySelector('.pli').textContent = ouvre ? '▾' : '▸';
+}
+function sectionCourante() {       // dernière entrée (ordre du document) qui commence au plus tard à la page courante
+  let c = -1;
+  for (let i = 0; i < tdm.length; i++) if (tdm[i].page && tdm[i].page <= pageAffichee) c = i;
+  return c;
+}
+function majTdm() {
+  if (!tdm.length) return;
+  const c = sectionCourante();
+  for (const l of $('ltdm').querySelectorAll('.tl.ici')) l.classList.remove('ici');
+  const l = c >= 0 && $('ltdm').querySelector(`.tl[data-i="${c}"]`);
+  if (l) l.classList.add('ici');
+}
+function ouvreTdm() {
+  $('tiroir').classList.add('ouvert'); $('voile').classList.add('ouvert');
+  majTdm();
+  const c = sectionCourante();     // on déplie jusqu'à la section courante et on la montre
+  for (let p = c >= 0 ? tdm[c].parent : -1; p >= 0; p = tdm[p].parent) plie(p, true);
+  const l = $('ltdm').querySelector('.tl.ici');
+  if (l) l.scrollIntoView({ block: 'center' });
+}
+function fermeTdm() { $('tiroir').classList.remove('ouvert'); $('voile').classList.remove('ouvert'); }
+$('btdm').onclick = () => $('tiroir').classList.contains('ouvert') ? fermeTdm() : ouvreTdm();
+$('ftdm').onclick = fermeTdm;
+$('voile').onclick = fermeTdm;
+$('ltdm').addEventListener('click', e => {
+  const l = e.target.closest('.tl'); if (!l) return;
+  const i = +l.dataset.i, t = tdm[i];
+  if (e.target.closest('[data-pli]') || (!t.page && t.enfants.length)) { plie(i, l.nextElementSibling.hidden); return; }
+  if (t.page) { fermeTdm(); affiche(t.page); }
+});
 
 // ===================== bibliothèque =====================
 async function majBiblio() {

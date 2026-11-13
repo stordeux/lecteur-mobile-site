@@ -1,6 +1,6 @@
 // Service worker : met l'application en cache pour qu'elle marche hors ligne.
 // Changer VERSION à chaque modification d'un fichier ci-dessous pour que le téléphone la reprenne.
-const VERSION = 'lecteur-mobile-20261113095929';
+const VERSION = 'lecteur-mobile-20261113222946';
 const FICHIERS = ['./', './index.html', './manifest.json', './pdfjs/pdf.min.js', './pdfjs/pdf.worker.min.js',
                   './icones/icone-192.png', './icones/icone-512.png'];
 
