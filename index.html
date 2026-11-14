@@ -22,9 +22,17 @@
            background:var(--barre); flex-wrap:nowrap; overflow-x:auto; }
   #barre button { padding:6px 10px; min-width:42px; }
   #page { font-variant-numeric: tabular-nums; min-width:76px; text-align:center; white-space:nowrap; }
+  #zval { font-variant-numeric: tabular-nums; min-width:3.4em; text-align:center; font-size:13px; cursor:pointer;
+          white-space:nowrap; user-select:none; }
+  #numpage { width:2.6em; font:inherit; color:inherit; text-align:right; background:transparent;
+             border:1px solid transparent; border-radius:4px; padding:2px 3px; }
+  #numpage:hover { border-color:rgba(255,255,255,.3); }
+  #numpage:focus { outline:none; border-color:#6af; background:rgba(255,255,255,.08); }
   #titre { flex:1; min-width:60px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--gris); font-size:14px; }
   #nbbadge { background:var(--accent); color:#fff; border-radius:10px; padding:0 6px; font-size:13px; margin-left:3px; }
   #vue { flex:1; overflow:auto; display:flex; align-items:flex-start; padding:8px; touch-action: pan-x pan-y; }
+  :root { --larg-volet: min(55vw, 420px); }
+  body.notes-ouvert #vue { margin-right:var(--larg-volet); }
   #feuille { position:relative; margin:0 auto; flex:none; background:#fff; box-shadow:0 2px 12px #0008; }
   #canv { display:block; }
   /* couche de texte de pdf.js 3.11 : texte transparent, sélectionnable par appui long */
@@ -43,13 +51,16 @@
   .sl.attente { background:rgba(255,200,0,.30); outline:1px dashed #c80; }
   .sl.flash { animation: flash 1.6s ease-out 1; }
   @keyframes flash { 0%,40% { box-shadow:0 0 0 3px #f60; } 100% { box-shadow:0 0 0 0 transparent; } }
-  #bcit { position:fixed; z-index:20; display:none; left:50%; transform:translateX(-50%); bottom:calc(16px + env(safe-area-inset-bottom));
-          background:var(--accent); color:#fff; border:0; border-radius:24px; padding:12px 20px; font-weight:600;
-          box-shadow:0 4px 16px #000a; }
-  /* panneau des commentaires : feuille qui monte du bas */
-  #panneau { position:fixed; left:0; right:0; bottom:0; height:72dvh; background:var(--fond); border-top:2px solid var(--accent);
-             border-radius:14px 14px 0 0; display:flex; flex-direction:column; gap:8px; padding:10px 10px calc(10px + env(safe-area-inset-bottom));
-             transform:translateY(105%); transition:transform .2s ease; z-index:10; box-shadow:0 -6px 24px #000a; }
+  #actsel { position:fixed; z-index:20; display:none; gap:10px; left:50%; transform:translateX(-50%); bottom:calc(16px + env(safe-area-inset-bottom)); }
+  #actsel button { background:var(--accent); color:#fff; border:0; border-radius:24px; padding:12px 18px; font-weight:600;
+          box-shadow:0 4px 16px #000a; white-space:nowrap; }
+  #blang { font-size:12px; font-weight:700; min-width:2.6em; }
+  #bvoix.actif { background:var(--accent); color:#fff; }
+  /* panneau des commentaires : volet qui glisse depuis la droite */
+  #panneau { position:fixed; top:0; right:0; bottom:0; width:var(--larg-volet); background:var(--fond); border-left:2px solid var(--accent);
+             display:flex; flex-direction:column; gap:8px;
+             padding:10px 10px calc(10px + env(safe-area-inset-bottom));
+             transform:translateX(105%); transition:transform .2s ease; z-index:10; box-shadow:-6px 0 24px #000a; overflow-y:auto; }
   #panneau.ouvert { transform:none; }
   #panneau h2 { font-size:17px; margin:0; display:flex; align-items:center; gap:8px; }
   #panneau h2 span { flex:1; }
@@ -122,13 +133,17 @@
   <button id="btdm" title="Table des matières">☰</button>
   <button id="bbiblio" title="Bibliothèque et ouverture d'un PDF">📂</button>
   <span id="titre">Lecteur</span>
-  <span id="page">–</span>
+  <span id="page"><input id="numpage" type="text" inputmode="numeric" enterkeyhint="go" autocomplete="off"
+    title="Taper un numéro de page puis Entrée" value="–"><span id="totp"> / –</span></span>
   <button id="zmoins" title="Zoom −">−</button>
+  <span id="zval" title="Zoom (appui : pleine largeur / 100 %)">–</span>
   <button id="zplus" title="Zoom +">+</button>
+  <button id="bvoix" title="Lire à voix haute : le passage sélectionné, sinon toute la page (appui pendant la lecture = arrêter)">🔊</button>
+  <button id="blang" title="Langue de la lecture à voix haute (FR / EN)">FR</button>
   <button id="bnotes" title="Commentaires">💬<span id="nbbadge">0</span></button>
 </div>
 <div id="vue"><div id="feuille"><canvas id="canv"></canvas><div id="surl"></div><div id="couche" class="textLayer"></div></div></div>
-<button id="bcit">💬 Commenter ce passage</button>
+<div id="actsel"><button id="blire">🔊 Lire</button><button id="bcit">💬 Commenter</button></div>
 <button id="pprec" class="fleche" title="Page précédente (← ou Page préc.)" disabled>◀</button>
 <button id="psuiv" class="fleche" title="Page suivante (→ ou Page suiv.)" disabled>▶</button>
 <div id="voile"></div>
@@ -168,7 +183,7 @@
 </div>
 
 <div id="accueil">
-  <h1>Lecteur de thèse</h1>
+  <h1 style="display:flex;align-items:center;gap:10px"><button id="retour" title="Revenir au document (Échap)" hidden>←</button>Lecteur de thèse</h1>
   <button id="ouvrir" class="prim" style="width:100%">📂 Ouvrir un PDF (téléphone, Dropbox…)</button>
   <h2 style="font-size:17px;margin:18px 0 8px">Documents déjà ouverts (disponibles hors ligne)</h2>
   <div id="ldocs"></div>
@@ -253,6 +268,7 @@ async function ouvreDoc(d) {
   for (const x of notes.items) if (x.audio && !x.audioUrl) {
     const m = await lit('memos', x.id); if (m) x.audioUrl = URL.createObjectURL(m.blob); }
   etat(notes.items.length ? notes.items.length + ' commentaire(s)' : 'Aucun commentaire pour l\'instant');
+  if (notes.items.length) ecritDisque();          // les commentaires déjà faits arrivent aussi sur le disque
   affiche(d.page || 1, true);
   chargeTdm();
 }
@@ -275,6 +291,7 @@ async function rendu() {
   const nouvelle = document.createElement('canvas');
   nouvelle.width = Math.floor(vp.width * dpr); nouvelle.height = Math.floor(vp.height * dpr);
   echActuelle = s;
+  $('zval').textContent = Math.round(s * 100) + ' %';
   if (tache) tache.cancel();
   tache = page.render({ canvasContext: nouvelle.getContext('2d'), viewport: vp, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null });
   try { await tache.promise; } catch (e) { return; }
@@ -297,7 +314,7 @@ function affiche(n, force) {
   n = Math.min(Math.max(1, n), nbPages);
   if (n === pageAffichee && !force) return;
   pageAffichee = n; oublieSel();
-  $('page').textContent = `${n} / ${nbPages}`;
+  $('numpage').value = n; $('totp').textContent = ` / ${nbPages}`;
   $('pprec').disabled = n <= 1; $('psuiv').disabled = n >= nbPages;
   majNotes(); rendu(); sauveDoc(); majTdm();
 }
@@ -310,10 +327,22 @@ $('pprec').onclick = () => affiche(pageAffichee - 1);
 $('psuiv').onclick = () => affiche(pageAffichee + 1);
 $('zplus').onclick = () => pasZoom(1);
 $('zmoins').onclick = () => pasZoom(-1);
-$('page').onclick = () => { const p = prompt('Aller à la page', pageAffichee); if (p) affiche(+p); };
+$('zval').onclick = () => { if (pdf) setZoom(zoom === 'l' ? 100 : 'l'); };
+// numéro de page modifiable sur place (plus de fenêtre « Aller à la page ») : Entrée = aller, Échap = annuler
+{
+  const np = $('numpage');
+  const valide = () => { const p = parseInt(np.value, 10); if (pdf && p > 0) affiche(p); np.value = pdf ? pageAffichee : '–'; };
+  np.onfocus = () => np.select();
+  np.onkeydown = e => {
+    if (e.key === 'Enter') { valide(); np.blur(); }
+    else if (e.key === 'Escape') { np.value = pdf ? pageAffichee : '–'; np.blur(); }
+  };
+  np.onblur = valide;
+}
 // clavier (essais sur le poste) : ← → et Page préc. / Page suiv., sauf dans un champ de saisie
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && $('tiroir').classList.contains('ouvert')) { fermeTdm(); return; }
+  if (e.key === 'Escape' && $('accueil').classList.contains('ouvert') && pdf) { $('accueil').classList.remove('ouvert'); return; }
   if (e.altKey || e.ctrlKey || e.metaKey || !pdf) return;
   const c = e.target;
   if (c && (c.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(c.tagName))) return;
@@ -433,7 +462,8 @@ $('ldocs').addEventListener('click', async e => {
     await efface('docs', id); await efface('notes', id); majBiblio();
   } else { b.dataset.ok = 1; b.textContent = 'Supprimer PDF et commentaires ?'; setTimeout(() => { b.textContent = '✕'; delete b.dataset.ok; }, 4000); }
 });
-$('bbiblio').onclick = () => { majBiblio(); $('accueil').classList.add('ouvert'); };
+$('bbiblio').onclick = () => { majBiblio(); $('retour').hidden = !pdf; $('accueil').classList.add('ouvert'); };
+$('retour').onclick = () => $('accueil').classList.remove('ouvert');   // revenir au document en cours
 $('ouvrir').onclick = () => $('fpdf').click();
 $('fpdf').onchange = () => { const f = $('fpdf').files[0]; $('fpdf').value = ''; if (f) ouvreFichier(f); };
 if ('launchQueue' in window) launchQueue.setConsumer(async p => { if (p.files.length) ouvreFichier(await p.files[0].getFile()); });
@@ -450,6 +480,21 @@ async function enregistre() {
   await ecrit('notes', { id: docCourant.id, data: propre });
   etat('Enregistré dans le téléphone à ' + new Date().toLocaleTimeString('fr-FR'));
   majNotes();
+  ecritDisque(propre);
+}
+// sur le poste (serveur_poste.py) : copie des commentaires sur le disque, à côté du PDF, à chaque enregistrement
+const SUR_POSTE = ['127.0.0.1', 'localhost'].includes(location.hostname);
+async function ecritDisque(propre) {
+  if (!SUR_POSTE || !docCourant) return;
+  try {
+    const r = await fetch('/commentaires', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nom: docCourant.nom, md: exportMd(),
+        data: propre || { ...notes, items: notes.items.map(({ audioUrl, ...x }) => x) } }) });
+    if (!r.ok) throw new Error(r.status);
+    const j = await r.json();
+    etat('Enregistré sur le disque : ' + j.json.replace(/^.*[\\/](ARTICLE|THESE|SOUTENANCE|OUTILS)[\\/]/, '$1/'));
+    $('etat').title = j.json + '\n' + j.md;
+  } catch (e) { etat('Pas d\'écriture sur le disque (serveur du poste absent) : commentaires gardés dans le navigateur', true); }
 }
 // sélection d'un passage : citation + zones (fractions de la page), comme le lecteur du poste
 function lisSelection() {
@@ -469,17 +514,78 @@ function lisSelection() {
   const q = x => Math.round(x * 10000) / 10000;
   return { page: pageAffichee, citation, zones: L.map(r => [q(r.l / F.width), q(r.t / F.height), q((r.r - r.l) / F.width), q((r.b - r.t) / F.height)]) };
 }
-function oublieSel() { derniereSel = null; $('bcit').style.display = 'none'; }
+function oublieSel() { derniereSel = null; $('actsel').style.display = 'none'; }
 let attenteSel = 0;
 document.addEventListener('selectionchange', () => {
   clearTimeout(attenteSel);
   attenteSel = setTimeout(() => {
     const s = lisSelection();
-    if (s) { derniereSel = s; $('bcit').style.display = 'block'; }
-    else if (getSelection().isCollapsed) $('bcit').style.display = 'none';
+    if (s) { derniereSel = s; $('actsel').style.display = 'flex'; }
+    else if (getSelection().isCollapsed) $('actsel').style.display = 'none';
   }, 250);
 });
-$('bcit').onclick = () => { ouvrePanneau(); nouvelleSaisie(); $('texte').focus(); };
+$('bcit').onclick = () => {
+  const s = lisSelection() || derniereSel;
+  ouvrePanneau();
+  // volet déjà ouvert avec une saisie commencée (appui dans la zone de texte avant de sélectionner) :
+  // nouvelleSaisie() ne faisait rien et le passage n'était pas rattaché ; on rattache la nouvelle sélection
+  if (ctxSaisie && !enEdition && s) {
+    citSaisie = s; ctxSaisie.page = s.page;
+    $('ctx').textContent = `Nouveau commentaire sur le passage : p. ${s.page}`;
+    majCitSaisie(); $('actsel').style.display = 'none'; dessineSurl();
+  } else nouvelleSaisie();
+  $('texte').focus();
+};
+
+// ===================== lecture à voix haute (voix du système, hors ligne, sans service en ligne) =====================
+const voix = window.speechSynthesis;
+let langue = 'fr';
+try { langue = localStorage.getItem('lecteur-langue') === 'en' ? 'en' : 'fr'; } catch (e) {}
+$('blang').textContent = langue.toUpperCase();
+$('blang').onclick = () => {
+  langue = langue === 'fr' ? 'en' : 'fr'; $('blang').textContent = langue.toUpperCase();
+  try { localStorage.setItem('lecteur-langue', langue); } catch (e) {}
+};
+function voixPour(l) {          // voix locale de la langue si possible (hors ligne)
+  const vs = voix.getVoices().filter(v => v.lang.toLowerCase().startsWith(l));
+  return vs.find(v => v.localService) || vs[0] || null;
+}
+function nettoie(t) { return t.replace(/-\s*\n\s*/g, '').replace(/\s+/g, ' ').trim(); }
+function morceaux(t) {          // phrases de 220 caractères au plus (Chrome Android coupe les énoncés longs)
+  const ph = t.match(/[^.!?;:]+[.!?;:]*\s*/g) || [t], R = [];
+  for (let p of ph) {
+    while (p.length > 220) { const i = p.lastIndexOf(' ', 220); R.push(p.slice(0, i > 0 ? i : 220)); p = p.slice(i > 0 ? i : 220); }
+    if (p.trim()) R.push(p);
+  }
+  return R;
+}
+function arreteLecture() { if (voix) voix.cancel(); $('bvoix').classList.remove('actif'); $('bvoix').textContent = '🔊'; }
+function lisTexte(t) {
+  if (!voix) { alerteVoix(); return; }
+  voix.cancel(); t = nettoie(t); if (!t) return;
+  const v = voixPour(langue), parts = morceaux(t);
+  $('bvoix').classList.add('actif'); $('bvoix').textContent = '⏹';
+  parts.forEach((p, i) => {
+    const u = new SpeechSynthesisUtterance(p);
+    u.lang = langue === 'fr' ? 'fr-FR' : 'en-US'; if (v) u.voice = v;
+    if (i === parts.length - 1) u.onend = arreteLecture;
+    u.onerror = e => { if (e.error !== 'interrupted' && e.error !== 'canceled') arreteLecture(); };
+    voix.speak(u);
+  });
+}
+function alerteVoix() { $('bvoix').title = 'Synthèse vocale indisponible dans ce navigateur'; $('bvoix').disabled = true; }
+async function textePage(n) {
+  const tc = await (await pdf.getPage(n)).getTextContent();
+  return tc.items.map(it => it.str + (it.hasEOL ? '\n' : ' ')).join('');
+}
+$('bvoix').onclick = async () => {
+  if (voix && (voix.speaking || voix.pending)) { arreteLecture(); return; }
+  // l'appui sur la barre peut défaire la sélection : on reprend la dernière tant que « Lire / Commenter » est affiché
+  const s = lisSelection() || ($('actsel').style.display === 'flex' ? derniereSel : null);
+  if (s) lisTexte(s.citation); else if (pdf) lisTexte(await textePage(pageAffichee));
+};
+$('blire').onclick = () => { const s = lisSelection() || derniereSel; if (s) lisTexte(s.citation); };
+if (!voix) alerteVoix(); else voix.getVoices();   // charge la liste des voix
 // appui court sur un surlignage : on montre son commentaire
 feuille.addEventListener('click', e => {
   if (!getSelection().isCollapsed) return;
@@ -544,7 +650,7 @@ function nouvelleSaisie() {
   ctxSaisie = { page: pageAffichee };
   if (derniereSel && derniereSel.page === pageAffichee) citSaisie = derniereSel;
   $('ctx').textContent = `Nouveau commentaire${citSaisie ? ' sur le passage' : ''} : p. ${ctxSaisie.page}`;
-  majCitSaisie(); $('bcit').style.display = 'none'; dessineSurl();
+  majCitSaisie(); $('actsel').style.display = 'none'; dessineSurl();
 }
 $('texte').addEventListener('focus', nouvelleSaisie);
 const CLEB = () => 'brouillon-' + (docCourant ? docCourant.id : '');
@@ -554,7 +660,7 @@ function finSaisie() {
   enEdition = null; ctxSaisie = null; citSaisie = null; derniereSel = null; memoEnCours = null; $('texte').value = '';
   $('etatmemo').textContent = '';
   $('ajouter').textContent = 'Enregistrer'; $('annuler').style.display = 'none';
-  getSelection().removeAllRanges(); $('bcit').style.display = 'none'; majCitSaisie();
+  getSelection().removeAllRanges(); $('actsel').style.display = 'none'; majCitSaisie();
   $('texte').blur(); majNotes();
 }
 $('ajouter').onclick = async () => {
@@ -635,8 +741,30 @@ $('memo').onclick = async () => {
 };
 
 // ===================== panneau =====================
-function ouvrePanneau() { $('panneau').classList.add('ouvert'); majNotes(); }
-function fermePanneau() { $('panneau').classList.remove('ouvert'); $('menuexp').classList.remove('ouvert'); }
+// le volet de droite rétrécit la zone de lecture : le zoom est réduit dans le même rapport pour garder le même texte
+// à l'écran (pleine largeur / page entière se recalculent seuls), puis rétabli à la fermeture
+let rapportVolet = 1;
+async function retailleVue(ouvrir) {
+  const w0 = vue.clientWidth, fy = vue.scrollHeight ? vue.scrollTop / vue.scrollHeight : 0;
+  document.body.classList.toggle('notes-ouvert', ouvrir);
+  const r = ouvrir ? vue.clientWidth / w0 : 1 / rapportVolet;
+  rapportVolet = ouvrir ? r : 1;
+  if (!pdf) return;
+  if (zoom !== 'l' && zoom !== 'h') zoom = String(Math.min(400, Math.max(30, Math.round(+zoom * r))));
+  await rendu();
+  vue.scrollTop = fy * vue.scrollHeight;
+}
+function ouvrePanneau() {
+  const p = $('panneau'); majNotes();
+  if (p.classList.contains('ouvert')) return;
+  p.style.top = $('barre').offsetHeight + 'px';  // la barre reste visible (pages, zoom, 💬)
+  p.classList.add('ouvert'); retailleVue(true);
+}
+function fermePanneau() {
+  $('menuexp').classList.remove('ouvert');
+  if (!$('panneau').classList.contains('ouvert')) return;
+  $('panneau').classList.remove('ouvert'); retailleVue(false);
+}
 $('bnotes').onclick = () => $('panneau').classList.contains('ouvert') ? fermePanneau() : ouvrePanneau();
 $('fermer').onclick = fermePanneau;
 $('bexp').onclick = () => $('menuexp').classList.toggle('ouvert');
