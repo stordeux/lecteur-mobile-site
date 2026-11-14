@@ -272,7 +272,7 @@ async function ouvreDoc(d) {
   for (const x of notes.items) if (x.audio && !x.audioUrl) {
     const m = await lit('memos', x.id); if (m) x.audioUrl = URL.createObjectURL(m.blob); }
   etat(notes.items.length ? notes.items.length + ' commentaire(s)' : 'Aucun commentaire pour l\'instant');
-  if (notes.items.length) ecritDisque();          // les commentaires déjà faits arrivent aussi sur le disque
+  if (!(await retireTraites()) && notes.items.length) ecritDisque();   // les commentaires déjà faits arrivent aussi sur le disque
   affiche(d.page || 1, true);
   chargeTdm();
 }
@@ -500,6 +500,24 @@ async function ecritDisque(propre) {
     $('etat').title = j.json + '\n' + j.md;
   } catch (e) { etat('Pas d\'écriture sur le disque (serveur du poste absent) : commentaires gardés dans le navigateur', true); }
 }
+// commentaires traités par Claude : il écrit leurs ids dans <pdf>.commentaires.traites.json à côté du PDF ;
+// le lecteur les retire à l'ouverture du document et quand la fenêtre reprend la main, puis réenregistre.
+async function retireTraites() {
+  if (!SUR_POSTE || !docCourant || !notes.items.length) return false;
+  try {
+    const r = await fetch('/traites?nom=' + encodeURIComponent(docCourant.nom), { cache: 'no-store' });
+    if (!r.ok) return false;
+    const ids = new Set((await r.json()).ids || []);
+    const partis = notes.items.filter(x => ids.has(x.id));
+    if (!partis.length) return false;
+    for (const x of partis) if (x.audio) await efface('memos', x.id);
+    notes.items = notes.items.filter(x => !ids.has(x.id));
+    await enregistre();
+    etat(partis.length + ' commentaire(s) traité(s) par Claude retiré(s)');
+    return true;
+  } catch (e) { return false; }
+}
+addEventListener('focus', () => { if (!enEdition) retireTraites(); });
 // sélection d'un passage : citation + zones (fractions de la page), comme le lecteur du poste
 function lisSelection() {
   const sel = getSelection();
@@ -755,15 +773,27 @@ $('memo').onclick = async () => {
 
 // ===================== panneau =====================
 // le volet de droite rétrécit la zone de lecture : le zoom est réduit dans le même rapport pour garder le même texte
-// à l'écran (pleine largeur / page entière se recalculent seuls), puis rétabli à la fermeture
-let rapportVolet = 1;
+// à l'écran (pleine largeur / page entière se recalculent seuls), puis rétabli à la fermeture.
+// Si la page dépasse la largeur restante, le zoom est plafonné à « pleine largeur » : toute la ligne reste visible.
+// À la fermeture, le zoom d'avant l'ouverture revient (sauf si le zoom a été changé à la main pendant ce temps).
+let rapportVolet = 1, zoomAvant = null, zoomVolet = null;
 async function retailleVue(ouvrir) {
   const w0 = vue.clientWidth, fy = vue.scrollHeight ? vue.scrollTop / vue.scrollHeight : 0;
   document.body.classList.toggle('notes-ouvert', ouvrir);
   const r = ouvrir ? vue.clientWidth / w0 : 1 / rapportVolet;
   rapportVolet = ouvrir ? r : 1;
   if (!pdf) return;
-  if (zoom !== 'l' && zoom !== 'h') zoom = String(Math.min(400, Math.max(30, Math.round(+zoom * r))));
+  if (ouvrir) {
+    zoomAvant = zoom;
+    if (zoom !== 'l' && zoom !== 'h') {
+      const base = feuille.offsetWidth / echActuelle;                   // largeur de la page à 100 %
+      const plein = Math.floor((vue.clientWidth - 16) / base * 100);    // zoom « pleine largeur » dans la zone réduite
+      zoom = String(Math.min(400, Math.max(30, Math.min(Math.round(+zoom * r), plein))));
+    }
+    zoomVolet = zoom;
+  } else if (zoomAvant !== null && zoom === zoomVolet) zoom = zoomAvant;
+  else if (zoom !== 'l' && zoom !== 'h') zoom = String(Math.min(400, Math.max(30, Math.round(+zoom * r))));
+  if (!ouvrir) zoomAvant = zoomVolet = null;
   await rendu();
   vue.scrollTop = fy * vue.scrollHeight;
 }
