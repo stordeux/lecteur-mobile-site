@@ -84,6 +84,9 @@
   .note .act { margin-left:auto; display:flex; gap:4px; }
   .note .act button { padding:4px 9px; min-height:34px; font-size:14px; }
   .note .corps { white-space:pre-wrap; margin-top:4px; }
+  .caseclaude { display:inline-flex; align-items:center; gap:4px; font-size:13px; color:var(--gris); cursor:pointer; }
+  .caseclaude input { width:18px; height:18px; margin:0; accent-color:#d97757; }
+  .note.claude { box-shadow:inset 0 0 0 1px #d97757; }
   .note .cit { font-style:italic; color:#c9cbd1; border-left:2px solid #4a4d55; padding-left:6px; margin:4px 0; }
   .note audio { width:100%; margin-top:4px; height:36px; }
   .note.flash { animation: flash 1.6s ease-out 1; }
@@ -170,6 +173,7 @@
         <option>Remarque</option><option>Question</option><option>Critique</option>
         <option value="Point fort">Point fort</option><option>Coquille</option>
       </select>
+      <label class="caseclaude" title="À traiter par Claude"><input type="checkbox" id="claudesaisie">🤖 Claude</label>
       <button id="ajouter" class="prim">Enregistrer</button>
       <button id="annuler" style="display:none">Annuler</button>
     </div>
@@ -621,8 +625,9 @@ function majNotes() {
   const f = $('filtre').value;
   const lst = trie(notes.items.filter(n => f === 'tout' || n.page === pageAffichee));
   $('lnotes').innerHTML = lst.map(n => `
-    <div class="note cat-${n.cat.split(' ')[0]}${n.page === pageAffichee ? ' ici' : ''}" data-id="${n.id}">
+    <div class="note cat-${n.cat.split(' ')[0]}${n.page === pageAffichee ? ' ici' : ''}${n.claude ? ' claude' : ''}" data-id="${n.id}">
       <div class="tete"><b>p. ${n.page}</b> ${esc(n.cat)}${n.source === 'poste' ? ' · poste' : ''}
+        <label class="caseclaude" title="À traiter par Claude"><input type="checkbox" data-a="claude"${n.claude ? ' checked' : ''}>🤖 Claude</label>
         <span class="act"><button data-a="aller">Aller</button><button data-a="modif">Modifier</button><button data-a="suppr">✕</button></span></div>
       ${n.citation ? `<div class="cit">« ${esc(n.citation)} »</div>` : ''}<div class="corps">${esc(n.texte)}</div>
       ${n.audioUrl ? `<audio controls preload="none" src="${n.audioUrl}"></audio>` : ''}</div>`).join('')
@@ -630,12 +635,17 @@ function majNotes() {
   dessineSurl();
 }
 $('filtre').onchange = majNotes;
+$('lnotes').addEventListener('change', e => {            // case « à traiter par Claude » d'un commentaire
+  if (e.target.dataset.a !== 'claude') return;
+  const n = notes.items.find(x => x.id === e.target.closest('.note').dataset.id);
+  if (n) { if (e.target.checked) n.claude = true; else delete n.claude; n.modifie = maintenant(); enregistre(); }
+});
 $('lnotes').addEventListener('click', async e => {
   const b = e.target.closest('button'); if (!b) return;
   const id = b.closest('.note').dataset.id, n = notes.items.find(x => x.id === id);
   if (b.dataset.a === 'aller') { aFlasher = n.zones ? n.id : null; fermePanneau(); affiche(n.page); dessineSurl(); }
   else if (b.dataset.a === 'modif') {
-    enEdition = n; $('texte').value = n.texte; $('cat').value = n.cat; majCitSaisie();
+    enEdition = n; $('texte').value = n.texte; $('cat').value = n.cat; $('claudesaisie').checked = !!n.claude; majCitSaisie();
     $('ctx').textContent = `Modification du commentaire p. ${n.page}`;
     $('ajouter').textContent = 'Enregistrer la modification'; $('annuler').style.display = '';
     $('texte').focus();
@@ -658,6 +668,7 @@ $('texte').addEventListener('input', () => localStorage.setItem(CLEB(), $('texte
 function finSaisie() {
   arreteDictee();
   enEdition = null; ctxSaisie = null; citSaisie = null; derniereSel = null; memoEnCours = null; $('texte').value = '';
+  $('claudesaisie').checked = false;
   $('etatmemo').textContent = '';
   $('ajouter').textContent = 'Enregistrer'; $('annuler').style.display = 'none';
   getSelection().removeAllRanges(); $('actsel').style.display = 'none'; majCitSaisie();
@@ -667,12 +678,14 @@ $('ajouter').onclick = async () => {
   if (enregistreur && enregistreur.state === 'recording') { enregistreur.stop(); await new Promise(ok => setTimeout(ok, 400)); }
   const txt = $('texte').value.trim();
   if (!txt && !memoEnCours) { finSaisie(); return; }
-  if (enEdition) { enEdition.texte = txt; enEdition.cat = $('cat').value; enEdition.modifie = maintenant(); }
+  if (enEdition) { enEdition.texte = txt; enEdition.cat = $('cat').value; enEdition.modifie = maintenant();
+    if ($('claudesaisie').checked) enEdition.claude = true; else delete enEdition.claude; }
   else {
     const c = ctxSaisie || { page: pageAffichee };
     const n = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), cree: maintenant(), source: 'mobile',
                 chap: -1, chapTitre: 'Document', page: c.page, t: 0, cat: $('cat').value, texte: txt || '(mémo vocal)',
-                ...(citSaisie ? { citation: citSaisie.citation, zones: citSaisie.zones } : {}) };
+                ...(citSaisie ? { citation: citSaisie.citation, zones: citSaisie.zones } : {}),
+                ...($('claudesaisie').checked ? { claude: true } : {}) };
     if (memoEnCours) {
       await ecrit('memos', { id: n.id, blob: memoEnCours.blob, type: memoEnCours.blob.type });
       n.audio = true; n.audioDuree = memoEnCours.duree; n.audioUrl = URL.createObjectURL(memoEnCours.blob);
@@ -773,9 +786,9 @@ $('bexp').onclick = () => $('menuexp').classList.toggle('ouvert');
 function exportMd() {
   const L = [`# Commentaires — ${notes.titre}`, '', `_Export du ${new Date().toLocaleString('fr-FR')} (lecteur mobile) — ${notes.items.length} commentaire(s)_`, ''];
   const fond = trie(notes.items.filter(n => n.cat !== 'Coquille')), forme = trie(notes.items.filter(n => n.cat === 'Coquille'));
-  for (const n of fond) L.push(`- **p. ${n.page}** (${n.cat}) — ${n.citation ? '« ' + n.citation + ' » — ' : ''}${n.texte.replace(/\n/g, '\n  ')}${n.audio ? ` [mémo vocal : ${nomMemo(n)}]` : ''}`);
+  for (const n of fond) L.push(`- ${n.claude ? '[🤖 Claude] ' : ''}**p. ${n.page}** (${n.cat}) — ${n.citation ? '« ' + n.citation + ' » — ' : ''}${n.texte.replace(/\n/g, '\n  ')}${n.audio ? ` [mémo vocal : ${nomMemo(n)}]` : ''}`);
   if (forme.length) { L.push('', '## Coquilles et remarques de forme', '');
-    for (const n of forme) L.push(`- p. ${n.page} : ${n.citation ? '« ' + n.citation + ' » → ' : ''}${n.texte.replace(/\n/g, ' ')}`); }
+    for (const n of forme) L.push(`- ${n.claude ? '[🤖 Claude] ' : ''}p. ${n.page} : ${n.citation ? '« ' + n.citation + ' » → ' : ''}${n.texte.replace(/\n/g, ' ')}`); }
   return L.join('\n') + '\n';
 }
 const texte2tex = s => s.replace(/([&%#])/g, '\\$1').replace(/\n\s*\n/g, '\n\n').replace(/«\s*/g, '\\og ').replace(/\s*»/g, '\\fg{}');
