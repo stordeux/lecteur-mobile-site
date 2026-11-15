@@ -256,6 +256,7 @@ async function ouvreFichier(f) {
 }
 async function ouvreDoc(d) {
   docCourant = d; $('accueil').classList.remove('ouvert');
+  d.ouvert = new Date().toISOString(); ecrit('docs', d);   // c'est lui qui rouvrira au prochain lancement / rechargement
   $('titre').textContent = d.nom.replace(/\.pdf$/i, '').replace(/_/g, ' ');
   document.title = $('titre').textContent;
   const donnees = await d.pdf.arrayBuffer();
