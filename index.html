@@ -89,6 +89,8 @@
   .note.claude { box-shadow:inset 0 0 0 1px #d97757; }
   .note .cit { font-style:italic; color:#c9cbd1; border-left:2px solid #4a4d55; padding-left:6px; margin:4px 0; }
   .note audio { width:100%; margin-top:4px; height:36px; }
+  .lmemo { display:flex; align-items:center; gap:6px; } .lmemo audio { flex:1; min-width:0; }
+  .lmemo button { white-space:nowrap; font-size:13px; padding:6px 10px; min-height:36px; }
   .note.flash { animation: flash 1.6s ease-out 1; }
   .cat-Remarque { border-left-color:#5b8def; } .cat-Question { border-left-color:#e3b341; }
   .cat-Critique { border-left-color:#e5534b; } .cat-Point { border-left-color:#57ab5a; }
@@ -668,7 +670,7 @@ function majNotes() {
         <label class="caseclaude" title="À traiter par Claude"><input type="checkbox" data-a="claude"${n.claude ? ' checked' : ''}>🤖 Claude</label>
         <span class="act"><button data-a="aller">Aller</button><button data-a="modif">Modifier</button><button data-a="suppr">✕</button></span></div>
       ${n.citation ? `<div class="cit">« ${esc(n.citation)} »</div>` : ''}<div class="corps">${esc(n.texte)}</div>
-      ${n.audioUrl ? `<audio controls preload="none" src="${n.audioUrl}"></audio>` : ''}</div>`).join('')
+      ${n.audioUrl ? `<div class="lmemo"><audio controls preload="none" src="${n.audioUrl}"></audio><button data-a="supmemo" title="Supprimer le mémo vocal (le commentaire est gardé)">🗑 Mémo</button></div>` : ''}</div>`).join('')
     || '<div style="color:var(--gris)">Aucun commentaire à afficher.</div>';
   dessineSurl();
 }
@@ -681,6 +683,14 @@ $('lnotes').addEventListener('change', e => {            // case « à traiter p
 $('lnotes').addEventListener('click', async e => {
   const b = e.target.closest('button'); if (!b) return;
   const id = b.closest('.note').dataset.id, n = notes.items.find(x => x.id === id);
+  if (b.dataset.a === 'supmemo') {                        // mémo vocal seul : deux appuis, le commentaire reste
+    if (!b.dataset.ok) { b.dataset.ok = 1; b.textContent = 'Supprimer le mémo ?'; setTimeout(() => { b.textContent = '🗑 Mémo'; delete b.dataset.ok; }, 3000); return; }
+    await efface('memos', id);
+    if (n.audioUrl) URL.revokeObjectURL(n.audioUrl);
+    delete n.audio; delete n.audioDuree; delete n.audioUrl; n.modifie = maintenant();
+    if (!n.texte.trim()) notes.items = notes.items.filter(x => x.id !== id);   // mémo sans texte : plus rien à garder
+    enregistre(); return;
+  }
   if (b.dataset.a === 'aller') { aFlasher = n.zones ? n.id : null; fermePanneau(); affiche(n.page); dessineSurl(); }
   else if (b.dataset.a === 'modif') {
     enEdition = n; $('texte').value = n.texte; $('cat').value = n.cat; $('claudesaisie').checked = !!n.claude; majCitSaisie();
@@ -784,7 +794,8 @@ $('memo').onclick = async () => {
     const blob = new Blob(morceaux, { type: enregistreur.mimeType || 'audio/webm' });
     memoEnCours = { blob, duree: Math.round((Date.now() - t0) / 1000) };
     $('memo').classList.remove('actif'); $('memo').textContent = '⏺ Mémo';
-    $('etatmemo').innerHTML = `Mémo vocal de ${memoEnCours.duree} s prêt à joindre <audio controls src="${URL.createObjectURL(blob)}" style="height:32px;vertical-align:middle;max-width:60%"></audio>`;
+    $('etatmemo').innerHTML = `Mémo vocal de ${memoEnCours.duree} s prêt à joindre <audio controls src="${URL.createObjectURL(blob)}" style="height:32px;vertical-align:middle;max-width:60%"></audio> <button id="jettememo" title="Jeter ce mémo avant d'enregistrer">🗑</button>`;
+    $('jettememo').onclick = () => { memoEnCours = null; $('etatmemo').textContent = 'Mémo jeté'; };
   };
   enregistreur.start();
   $('memo').classList.add('actif'); $('memo').textContent = '■ Fin du mémo';
