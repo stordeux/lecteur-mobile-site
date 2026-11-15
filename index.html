@@ -175,6 +175,9 @@
       <button id="annuler" style="display:none">Annuler</button>
     </div>
     <div id="etatmemo" style="font-size:13px;color:var(--gris)"></div>
+    <div class="ligne" style="font-size:13px;color:var(--gris)">🎙
+      <select id="choixmicro" title="Micro utilisé pour les mémos vocaux" style="flex:1;min-width:0"><option value="">Micro par défaut</option></select>
+    </div>
   </div>
   <div class="ligne">
     <select id="filtre"><option value="tout">Tous les commentaires</option><option value="page">Cette page</option></select>
@@ -779,12 +782,29 @@ $('micro').onclick = () => {
 
 // ----- mémo vocal : enregistré dans le téléphone, joint au commentaire (marche toujours hors ligne) -----
 let enregistreur = null;
+// choix du micro des mémos : liste des entrées audio (les noms n'apparaissent qu'après une première autorisation),
+// choix retenu dans ce navigateur. La dictée 🎤 (reconnaissance vocale de Chrome) prend toujours le micro par défaut.
+async function listeMicros() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+  let garde = ''; try { garde = localStorage.getItem('micro') || ''; } catch (e) {}
+  const ms = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput' && d.deviceId !== 'default' && d.deviceId !== 'communications');
+  const s = $('choixmicro'), courant = s.value || garde;
+  s.innerHTML = '<option value="">Micro par défaut</option>' +
+    ms.map((d, i) => `<option value="${esc(d.deviceId)}">${esc(d.label || 'Micro ' + (i + 1) + ' (nom visible après autorisation)')}</option>`).join('');
+  if (ms.some(d => d.deviceId === courant)) s.value = courant;
+}
+$('choixmicro').onchange = () => { try { localStorage.setItem('micro', $('choixmicro').value); } catch (e) {} };
+if (navigator.mediaDevices) { listeMicros(); navigator.mediaDevices.addEventListener('devicechange', listeMicros); }
 $('memo').onclick = async () => {
   if (enregistreur && enregistreur.state === 'recording') { enregistreur.stop(); return; }
   nouvelleSaisie(); arreteDictee();
   let flux;
-  try { flux = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-  catch (e) { etat('Micro refusé : autorisez-le dans les réglages de l\'application.', true); return; }
+  const micId = $('choixmicro').value;
+  try { flux = await navigator.mediaDevices.getUserMedia({ audio: micId ? { deviceId: { exact: micId } } : true }); listeMicros(); }
+  catch (e) {                                      // message précis : refusé, absent ou occupé par une autre application
+    const pourquoi = { NotAllowedError: 'refusé par le navigateur (cadenas de la barre › Micro › Autoriser)',
+      NotFoundError: 'aucun micro trouvé', NotReadableError: 'micro occupé par une autre application ou en panne' }[e.name] || e.name;
+    etat('Micro : ' + pourquoi, true); return; }
   const type = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : '';
   enregistreur = new MediaRecorder(flux, type ? { mimeType: type } : {});
   const morceaux = [], t0 = Date.now();
