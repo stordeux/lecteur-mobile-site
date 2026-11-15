@@ -106,10 +106,6 @@
   #menuexp.ouvert { display:flex; }
   input[type=file] { display:none; }
   button:disabled { opacity:.35; }
-  /* flèches de page : grandes, en bas de l'écran, sous le panneau des commentaires */
-  .fleche { position:fixed; z-index:5; bottom:calc(14px + env(safe-area-inset-bottom)); width:56px; height:56px; min-height:56px;
-            border-radius:50%; padding:0; font-size:22px; background:rgba(56,58,64,.85); box-shadow:0 2px 10px #0008; }
-  #pprec { left:10px; } #psuiv { right:10px; }
   /* tiroir de gauche : table des matières */
   #voile { position:fixed; inset:0; background:#0009; z-index:24; display:none; }
   #voile.ouvert { display:block; }
@@ -135,6 +131,7 @@
 <div id="barre">
   <button id="btdm" title="Table des matières">☰</button>
   <button id="bbiblio" title="Bibliothèque et ouverture d'un PDF">📂</button>
+  <button id="brecharge" title="Recharger le PDF depuis le disque (après une recompilation) ; les commentaires sont gardés" hidden>⟳</button>
   <span id="titre">Lecteur</span>
   <span id="page"><input id="numpage" type="text" inputmode="numeric" enterkeyhint="go" autocomplete="off"
     title="Taper un numéro de page puis Entrée" value="–"><span id="totp"> / –</span></span>
@@ -147,8 +144,6 @@
 </div>
 <div id="vue"><div id="feuille"><canvas id="canv"></canvas><div id="surl"></div><div id="couche" class="textLayer"></div></div></div>
 <div id="actsel"><button id="blire">🔊 Lire</button><button id="bcit">💬 Commenter</button></div>
-<button id="pprec" class="fleche" title="Page précédente (← ou Page préc.)" disabled>◀</button>
-<button id="psuiv" class="fleche" title="Page suivante (→ ou Page suiv.)" disabled>▶</button>
 <div id="voile"></div>
 <div id="tiroir" aria-label="Table des matières">
   <h2><span>Table des matières</span><button id="ftdm" title="Fermer">✕</button></h2>
@@ -275,6 +270,7 @@ async function ouvreDoc(d) {
   if (!(await retireTraites()) && notes.items.length) ecritDisque();   // les commentaires déjà faits arrivent aussi sur le disque
   affiche(d.page || 1, true);
   chargeTdm();
+  recharge(true);                                 // sur le poste : version du disque si elle est plus récente
 }
 async function sauveDoc() { if (docCourant) { docCourant.page = pageAffichee; docCourant.zoom = zoom; await ecrit('docs', docCourant); } }
 
@@ -319,7 +315,6 @@ function affiche(n, force) {
   if (n === pageAffichee && !force) return;
   pageAffichee = n; oublieSel();
   $('numpage').value = n; $('totp').textContent = ` / ${nbPages}`;
-  $('pprec').disabled = n <= 1; $('psuiv').disabled = n >= nbPages;
   majNotes(); rendu(); sauveDoc(); majTdm();
 }
 function setZoom(z) { zoom = String(z); rendu(); sauveDoc(); }
@@ -327,8 +322,6 @@ function pasZoom(d) {
   const c = Math.round(echActuelle * 100);
   setZoom(Math.min(400, Math.max(30, d > 0 ? Math.floor(c / 10) * 10 + 10 : Math.ceil(c / 10) * 10 - 10)));
 }
-$('pprec').onclick = () => affiche(pageAffichee - 1);
-$('psuiv').onclick = () => affiche(pageAffichee + 1);
 $('zplus').onclick = () => pasZoom(1);
 $('zmoins').onclick = () => pasZoom(-1);
 $('zval').onclick = () => { if (pdf) setZoom(zoom === 'l' ? 100 : 'l'); };
@@ -517,7 +510,33 @@ async function retireTraites() {
     return true;
   } catch (e) { return false; }
 }
-addEventListener('focus', () => { if (!enEdition) retireTraites(); });
+// rechargement du PDF depuis le disque (sur le poste) : même document, mêmes commentaires, même page et même zoom.
+// Bouton ⟳, et automatiquement quand la fenêtre reprend la main si le fichier a changé (recompilation).
+let enRecharge = false;
+async function recharge(auto) {
+  if (!SUR_POSTE || !docCourant || enRecharge) return;
+  enRecharge = true;
+  try {
+    const nom = encodeURIComponent(docCourant.nom);
+    const info = await (await fetch('/pdfinfo?nom=' + nom, { cache: 'no-store' })).json();
+    if (!info.mtime) { if (!auto) etat('PDF introuvable sur le disque (ARTICLE, THESE, SOUTENANCE)', true); return; }
+    // déjà la version du disque : même date ET même taille que le PDF gardé par le lecteur
+    if (auto && docCourant.mtimeDisque === info.mtime && docCourant.pdf && docCourant.pdf.size === info.taille) return;
+    const r = await fetch('/pdf?nom=' + nom, { cache: 'no-store' });
+    if (!r.ok) throw new Error(r.status);
+    const blob = await r.blob();
+    await sauveDoc();
+    docCourant.pdf = new File([blob], docCourant.nom, { type: 'application/pdf' });
+    docCourant.taille = blob.size; docCourant.mtimeDisque = info.mtime;
+    await ecrit('docs', docCourant);
+    await ouvreDoc(docCourant);
+    etat('PDF rechargé depuis le disque (' + new Date(info.mtime * 1000).toLocaleTimeString('fr-FR') + ')');
+  } catch (e) { if (!auto) etat('Rechargement impossible (serveur du poste absent ?)', true); }
+  finally { enRecharge = false; }
+}
+$('brecharge').hidden = !SUR_POSTE;
+$('brecharge').onclick = () => recharge(false);
+addEventListener('focus', async () => { if (!enEdition) { await recharge(true); retireTraites(); } });
 // sélection d'un passage : citation + zones (fractions de la page), comme le lecteur du poste
 function lisSelection() {
   const sel = getSelection();
